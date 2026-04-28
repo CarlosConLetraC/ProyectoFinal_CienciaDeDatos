@@ -1,6 +1,8 @@
-import("csvfast", "Table", "json", "cml", "cstats", "task")
+import("csvfast", "json", "cml", "cstats", "task")
 
--- DISCOVER SHARDS
+-- =========================
+-- SHARD DISCOVERY
+-- =========================
 local function list_files(prefix)
 	local p = io.popen("ls data/" .. prefix .. "_*.csv 2>/dev/null")
 	if not p then return {} end
@@ -10,10 +12,10 @@ local function list_files(prefix)
 	for file in p:lines() do
 		local n = file:match(prefix .. "_(%d+)%.csv")
 		if n then
-			table.insert(files, {
+			files[#files+1] = {
 				path = file,
 				idx = tonumber(n)
-			})
+			}
 		end
 	end
 
@@ -26,21 +28,34 @@ local function list_files(prefix)
 	return files
 end
 
--- SHARDS
+local function bool(v)
+    if v == nil then return 0 end
+    local s = string.lower(tostring(v))
+    if s == "1" or s == "t" or s == "true" or s == "yes" then
+        return 1
+    end
+    return 0
+end
+
 local train_shards = list_files("dataset_train")
 local test_shards  = list_files("dataset_test")
-
-blund(#train_shards > 0, "no train shards found")
-blund(#test_shards > 0, "no test shards found")
 
 print("Train shards:", #train_shards)
 print("Test shards :", #test_shards)
 
+if #train_shards == 0 then
+	error("no train shards found")
+end
+
+-- =========================
 -- STORAGE
+-- =========================
 local train = {}
 local test  = {}
 
--- schema
+-- =========================
+-- SCHEMA
+-- =========================
 local schema = {
 	log_price = true,
 	accommodates = true,
@@ -49,8 +64,6 @@ local schema = {
 	beds = true,
 	reviews = true,
 	rating = true,
-	latitude = true,
-	longitude = true,
 	lat = true,
 	lon = true,
 	cleaning_fee = true,
@@ -62,65 +75,89 @@ local schema = {
 	is_apartment = true
 }
 
-local function get_lat(r)
-	return r.lat or r.latitude
-end
-
-local function get_lon(r)
-	return r.lon or r.longitude
-end
-
--- LOADER
+-- =========================
+-- LOADER (SAFE)
+-- =========================
 local function loader(shards, target, label)
-	return function()
-		for _, s in ipairs(shards) do
-			print("["..label.."] loading:", s.path)
+	for _, s in ipairs(shards) do
+		print("["..label.."] loading:", s.path)
 
-			csvfast.each(s.path, function(r)
+		csvfast.each(s.path, function(r)
+			if not r then return end
 
-				local lat = get_lat(r)
-				local lon = get_lon(r)
+			local y = r.log_price
+			if not y or y ~= y then return end
 
-				if not lat or not lon then return end
-				if r.log_price ~= r.log_price then return end
+			local lat = r.lat or r.latitude
+			local lon = r.lon or r.longitude
+			if not lat or not lon then return end
 
-				target[#target+1] = {
-					log_price = r.log_price,
-					accommodates = r.accommodates,
-					bathrooms = r.bathrooms,
-					bedrooms = r.bedrooms,
-					beds = r.beds,
-					reviews = r.reviews,
-					rating = r.rating,
-					lat = lat,
-					lon = lon,
-					cleaning_fee = r.cleaning_fee,
-					instant_bookable = r.instant_bookable,
-					host_verified = r.host_verified,
-					room_entire = r.room_entire,
-					room_private = r.room_private,
-					room_shared = r.room_shared,
-					is_apartment = r.is_apartment
-				}
+			target[#target+1] = {
+				log_price = y,
+				accommodates = r.accommodates,
+				bathrooms = r.bathrooms,
+				bedrooms = r.bedrooms,
+				beds = r.beds,
+				reviews = r.reviews,
+				rating = r.rating,
+				lat = lat,
+				lon = lon,
+				cleaning_fee = r.cleaning_fee,
+				instant_bookable = bool(r.instant_bookable),
+				host_verified = bool(r.host_verified),
+				room_entire = bool(r.room_entire),
+				room_private = bool(r.room_private),
+				room_shared = bool(r.room_shared),
+				is_apartment = bool(r.is_apartment)
+			}
+		end, { schema = schema })
 
-			end, { schema = schema })
-
-			task.wait(0)
-		end
-
-		print("["..label.."] DONE")
+		task.wait(0)
 	end
+
+	print("["..label.."] DONE")
 end
 
-task.spawn(loader(train_shards, train, "TRAIN"))
-task.spawn(loader(test_shards, test, "TEST"))
+task.spawn(loader, train_shards, train, "TRAIN")
+task.spawn(loader, test_shards, test, "TEST")
 
 while task.step() do end
 
 print("Train size:", #train)
 print("Test size :", #test)
 
+-- =========================
+-- IMPORTANT FIX: SINGLE SPLIT ONLY
+-- =========================
+local function split(data, ratio)
+	local n = #data
+	if n < 10 then
+		error("dataset too small for split: " .. n)
+	end
+
+	local split = math.floor(n * ratio)
+
+	if split < 2 then split = 2 end
+	if split >= n then split = n - 2 end
+
+	local trainSet = {}
+	local testSet  = {}
+
+	for i = 1, split do trainSet[#trainSet+1] = data[i] end
+	for i = split+1, n do testSet[#testSet+1] = data[i] end
+
+	return trainSet, testSet
+end
+
+-- fallback if needed
+if #test == 0 then
+	print("[WARN] no test shards -> internal split 80/20")
+	train, test = split(train, 0.8)
+end
+
+-- =========================
 -- FEATURES
+-- =========================
 local features = {
 	"accommodates","bathrooms","bedrooms","beds",
 	"reviews","rating","lat","lon",
@@ -128,70 +165,50 @@ local features = {
 	"room_entire","room_private","room_shared","is_apartment"
 }
 
+-- =========================
 -- MODEL
+-- =========================
 local model = cml.LinearRegression({
 	features = features,
 	target = "log_price"
 })
+print("[MODEL] Loading data into C++ matrix...")
+model:load(train)
 
-model:fit(train, 0.05, 3000, 0.0)
+print("[MODEL] Computing statistics and normalizing...")
+model:normalize()
 
--- PREDICT ARRAYS
-local y_true = {}
-local y_pred = {}
+model:fit(train, 0.05, 5000, 0.8, 0.02)
 
+local mse = model:mse(test)
+local r2  = model:r2(test)
+
+-- Para MAE, si no lo implementamos en C++, seguimos usando cstats
+local y_true, y_pred = {}, {}
 for i = 1, #test do
-	local r = test[i]
-	local p = model:predict(r)
-
-	y_true[i] = r.log_price
-	y_pred[i] = p
+	y_true[i] = test[i].log_price
+	y_pred[i] = model:predict(test[i])
 end
+local mae = cstats.mae(y_true, y_pred)
 
--- METRICS (CSTATS NOW USED PROPERLY)
-local mae  = cstats.mae(y_true, y_pred)
-local mse  = cstats.mse(y_true, y_pred)
-local r2   = cstats.r2(y_true, y_pred)
-
--- CORRELATION (still useful)
-local function col(data, key)
-	local t = {}
-	for i = 1, #data do
-		t[i] = data[i][key]
-	end
-	return t
-end
-
-local corr_rating  = cstats.corr(col(train,"rating"), col(train,"log_price"))
-local corr_reviews = cstats.corr(col(train,"reviews"), col(train,"log_price"))
-
-print("===== METRICS =====")
+print("===== METRICS (C++ API) =====")
 print("MAE:", mae)
 print("MSE:", mse)
 print("R2 :", r2)
-print("Corr rating:", corr_rating)
-print("Corr reviews:", corr_reviews)
 
--- EXPORT
-local export = model:export()
-
-if #export.weights == #features + 1 then
-	export.bias = table.remove(export.weights, 1)
-end
-
+-- EXPORTACION (Pesos des-normalizados)
 local out = {
 	meta = {
 		train = #train,
-		test = #test
+		test = #test,
+		features = features
 	},
 	metrics = {
 		mae = mae,
 		mse = mse,
-		r2 = r2,
-		corr_rating = corr_rating,
-		corr_reviews = corr_reviews
+		r2 = r2
 	},
-	model = export
+	model = model:export()
 }
 
 local f = assert(io.open("data/model_final.json", "w"))

@@ -7,13 +7,14 @@ preworker.start(
     PREFIX_SALIDA_REGRESION
 )]]
 
-local INT_TOTAL_WORKERS = 10
+local INT_TOTAL_WORKERS = 1
 local PATH_OUTPUT = "daemons"
 
 os.execute("mkdir -p " .. PATH_OUTPUT)
 os.execute("rm -rf " .. PATH_OUTPUT .. "/*")
 os.execute("rm -rf data/train_*.csv")
 os.execute("rm -rf data/test_*.csv")
+os.execute("rm -rf data/dataset_train_*")
 os.execute("rm -rf data/model_final.json")
 
 local base_src = CodigoFuenteWorker

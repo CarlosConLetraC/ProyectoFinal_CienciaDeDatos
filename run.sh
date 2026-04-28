@@ -38,4 +38,4 @@ source "$PWD/entorno/bin/activate"
 ./backend daemons
 ./runclient merge.lua
 rm -rf daemons/*
-python actividad_parte1.py
+#python actividad_parte1.py
