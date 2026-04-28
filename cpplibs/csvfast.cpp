@@ -262,88 +262,98 @@ static int l_read_columns(lua_State* L) {
 
 // SAVE COLUMNS
 static int l_save_columns(lua_State* L) {
-	luaL_checktype(L, 1, LUA_TTABLE);
-	const char* path = luaL_checkstring(L, 2);
+    // 1. Validar argumentos
+    luaL_checktype(L, 1, LUA_TTABLE);    // Tabla de datos {col1 = {}, col2 = {}}
+    const char* path = luaL_checkstring(L, 2); // Ruta del archivo
+    
+    std::vector<std::string> headers;
 
-	std::ofstream out(path);
-	if (!out.is_open()) return luaL_error(L, "cannot open output file");
-	std::vector<std::string> headers;
+    // 2. Determinar el orden de las columnas (Headers)
+    if (lua_istable(L, 3)) {
+        // Si el usuario provee una lista con el orden (p.ej. COLUMN_ORDER)
+        int n = (int)lua_rawlen(L, 3);
+        for (int i = 1; i <= n; i++) {
+            lua_rawgeti(L, 3, i);
+            if (lua_isstring(L, -1)) {
+                headers.push_back(lua_tostring(L, -1));
+            }
+            lua_pop(L, 1);
+        }
+    } else {
+        // Fallback: Orden aleatorio (comportamiento original de Lua)
+        lua_pushnil(L);
+        while (lua_next(L, 1)) {
+            if (lua_type(L, -2) == LUA_TSTRING) {
+                std::string key = lua_tostring(L, -2);
+                if (key != "_ptr") headers.push_back(key);
+            }
+            lua_pop(L, 1);
+        }
+    }
 
-	// collect headers
-	lua_pushnil(L);
-	while (lua_next(L, 1)) {
-		if (lua_type(L, -2) == LUA_TSTRING) {
-			std::string key = lua_tostring(L, -2);
-			if (key != "_ptr") headers.push_back(key);
-		}
-		lua_pop(L, 1);
-	}
+    if (headers.empty()) return 0;
 
-	if (headers.empty()) {
-		out.close();
-		return 0;
-	}
+    std::ofstream out(path);
+    if (!out.is_open()) return luaL_error(L, "No se pudo abrir el archivo para escritura");
 
-	// HEADER
-	for (size_t i = 0; i < headers.size(); i++) {
-		if (i) out << ",";
-		out << headers[i];
-	}
-	out << "\n";
+    // 3. Escribir encabezados
+    for (size_t i = 0; i < headers.size(); i++) {
+        out << headers[i] << (i == headers.size() - 1 ? "" : ",");
+    }
+    out << "\n";
 
-	// ROW COUNT
-	int rows = 0;
+    // 4. Calcular el número máximo de filas revisando las tablas de las columnas
+    int row_count = 0;
+    for (const auto& h : headers) {
+        lua_getfield(L, 1, h.c_str());
+        if (lua_istable(L, -1)) {
+            int n = (int)lua_rawlen(L, -1);
+            if (n > row_count) row_count = n;
+        }
+        lua_pop(L, 1);
+    }
 
-	for (size_t i = 0; i < headers.size(); i++) {
-		lua_getfield(L, 1, headers[i].c_str());
-		int n = (int)lua_rawlen(L, -1);
-		lua_pop(L, 1);
-		if (n > rows) rows = n;
-	}
+    // 5. Escribir los datos fila por fila
+    for (int r = 1; r <= row_count; r++) {
+        for (size_t c = 0; c < headers.size(); c++) {
+            lua_getfield(L, 1, headers[c].c_str()); // Obtenemos la tabla de la columna
+            
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, r); // Obtenemos el valor en la fila r
+                
+                int type = lua_type(L, -1);
+                if (type == LUA_TNUMBER) {
+                    double v = lua_tonumber(L, -1);
+                    if (std::isfinite(v)) out << v;
+                    else out << "0"; // Seguridad para el modelo
+                } 
+                else if (type == LUA_TSTRING) {
+                    std::string s = lua_tostring(L, -1);
+                    // Sanitización para CSV
+                    bool needs_quotes = (s.find(',') != std::string::npos || s.find('"') != std::string::npos);
+                    if (needs_quotes) {
+                        out << "\"";
+                        for (char ch : s) {
+                            if (ch == '"') out << "\"\"";
+                            else out << ch;
+                        }
+                        out << "\"";
+                    } else {
+                        out << s;
+                    }
+                }
+                lua_pop(L, 1); // Quitar valor
+            }
+            lua_pop(L, 1); // Quitar tabla de columna
 
-	// DATA
-	for (int r = 1; r <= rows; r++) {
-		for (size_t c = 0; c < headers.size(); c++) {
-			if (c) out << ",";
+            if (c < headers.size() - 1) out << ",";
+        }
+        out << "\n";
+    }
 
-			lua_getfield(L, 1, headers[c].c_str());
-			lua_rawgeti(L, -1, r);
-
-			int t = lua_type(L, -1);
-
-			// NUMBER
-			if (t == LUA_TNUMBER) {
-				double v = lua_tonumber(L, -1);
-				if (std::isfinite(v) && !std::isnan(v)) out << v;
-			}
-
-			// STRING
-			else if (t == LUA_TSTRING) {
-				std::string s = lua_tostring(L, -1);
-				if (!is_invalid(s)) {
-					s = sanitize(s);
-					bool quote = (s.find(',') != std::string::npos || s.find('"') != std::string::npos);
-					if (quote) {
-						out << "\"";
-						for (char ch : s) {
-							if (ch == '"') out << "\"\"";
-							else out << ch;
-						}
-						out << "\"";
-					} else {
-						out << s;
-					}
-				}
-			}
-			lua_pop(L, 2);
-		}
-		out << "\n";
-	}
-
-	out.close();
-
-	lua_pushboolean(L, 1);
-	return 1;
+    out.close();
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 // COUNT ROWS

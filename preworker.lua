@@ -22,6 +22,13 @@ local FEATURES = {
 	property_type = true
 }
 
+local COLUMN_ORDER = {
+	"accommodates", "bathrooms", "bedrooms", "beds", "reviews", 
+	"rating", "lat", "lon", "cleaning_fee", "instant_bookable", 
+	"host_verified", "room_entire", "room_private", "room_shared", 
+	"is_apartment", "log_price"
+}
+
 -- UTILS
 local function bool(v)
 	if v == nil then return 0 end
@@ -105,25 +112,16 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 		idx = idx + 1
 
 		-- target
-		local y = safe_num(r.log_price)
-		if not y then return end
+		local y = safe_num(r.log_price) or 0
+		local acc = safe_num(r.accommodates) or 0
+		local bath = safe_num(r.bathrooms) or 0
+		local bed = safe_num(r.bedrooms) or 0
+		local beds = safe_num(r.beds) or 0
+		local rat = safe_num(r.review_scores_rating) or 0
 
-		-- numeric features
-		local acc = clip(safe_num(r.accommodates) or 0, 1, 10)
-
-		local bath = safe_num(r.bathrooms) or mean.bathrooms
-		local bed  = safe_num(r.bedrooms) or mean.bedrooms
-		local beds = safe_num(r.beds) or mean.beds
-		local rat  = safe_num(r.review_scores_rating) or mean.review_scores_rating
-
-		bath = clip(bath, 0, 5)
-		bed  = clip(bed, 0, 5)
-		beds = clip(beds, 0, 10)
-		rat  = clip(rat, 0, 100)
-
-		-- categorical / binary
-		local room = clean_str(r.room_type)
-		local prop = clean_str(r.property_type)
+		-- Acceso más seguro usando r["nombre"] por si r.nombre falla
+		local room = clean_str(r["room_type"])
+		local prop = clean_str(r["property_type"])
 
 		local row = {
 			log_price    = y,
@@ -131,21 +129,21 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 			bathrooms    = bath,
 			bedrooms     = bed,
 			beds         = beds,
-			reviews      = safe_num(r.number_of_reviews) or 0,
+			reviews      = safe_num(r["number_of_reviews"]) or 0,
 			rating       = rat,
-			lat          = safe_num(r.latitude) or 0,
-			lon          = safe_num(r.longitude) or 0,
+			lat          = safe_num(r["latitude"]) or 0,
+			lon          = safe_num(r["longitude"]) or 0,
 
-			-- 2. Uso de tu nueva función bool
-			cleaning_fee     = bool(r.cleaning_fee),
-			instant_bookable = bool(r.instant_bookable),
-			host_verified    = bool(r.host_identity_verified),
+			-- Revisa que r.cleaning_fee no sea nil antes de pasar a bool()
+			cleaning_fee     = bool(r["cleaning_fee"]),
+			instant_bookable = bool(r["instant_bookable"]),
+			host_verified    = bool(r["host_identity_verified"]),
 
-			-- 3. Comparacion robusta
-			room_entire  = (string.find(room, "entire")) and 1 or 0,
-			room_private = (string.find(room, "private")) and 1 or 0,
-			room_shared  = (string.find(room, "shared")) and 1 or 0,
-			is_apartment = (string.find(prop, "apartment")) and 1 or 0
+			-- Comparación de strings
+			room_entire  = (room:find("entire")) and 1 or 0,
+			room_private = (room:find("private")) and 1 or 0,
+			room_shared  = (room:find("shared")) and 1 or 0,
+			is_apartment = (prop:find("apartment")) and 1 or 0
 		}
 		train:iput(row)
 	end, {
@@ -156,21 +154,23 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 
 	-- EXPORT
 	local function export(dataset, outprefix)
-		local cols = {
-			log_price={}, accommodates={}, bathrooms={}, bedrooms={}, beds={},
-			reviews={}, rating={}, lat={}, lon={},
-			cleaning_fee={}, instant_bookable={}, host_verified={},
-			room_entire={}, room_private={}, room_shared={}, is_apartment={}
-		}
+		local output_table = {}
+		for _, colName in ipairs(COLUMN_ORDER) do
+			output_table[colName] = {}
+		end
 
-		for i = 1, dataset:len(), 1 do
-			local r = dataset[i]
-			for k in pairs(cols) do
-				cols[k][i] = r[k]
+		-- dataset es tu objeto 'train' (csvfast.Table)
+		for i = 1, dataset:len() do
+			local r = dataset[i] 
+			for _, colName in ipairs(COLUMN_ORDER) do
+				-- Asegúrate de que r[colName] no sea nil
+				local val = r[colName] or 0
+				table.insert(output_table[colName], val)
 			end
 		end
 
-		csvfast.save_columns(cols, outprefix .. "_" .. workerId .. ".csv")
+		-- IMPORTANTE: Verifica si el archivo se escribe bien
+		csvfast.save_columns(output_table, outprefix .. "_" .. workerId .. ".csv", COLUMN_ORDER)
 	end
 
 	export(train, "data/dataset_train")

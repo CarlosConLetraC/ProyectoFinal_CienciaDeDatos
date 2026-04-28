@@ -158,19 +158,14 @@ end
 -- =========================
 -- FEATURES
 -- =========================
-local features = {
-	"accommodates","bathrooms","bedrooms","beds",
-	"reviews","rating","lat","lon",
-	"cleaning_fee","instant_bookable","host_verified",
-	"room_entire","room_private","room_shared","is_apartment"
-}
+local features = {"accommodates", "bathrooms", "bedrooms", "beds", "reviews", "rating", "lat", "lon", "cleaning_fee", "instant_bookable", "host_verified", "room_entire", "room_private", "room_shared", "is_apartment"}
 
 -- =========================
 -- MODEL
 -- =========================
 local model = cml.LinearRegression({
-	features = features,
-	target = "log_price"
+    features = features,
+    target = "log_price"
 })
 print("[MODEL] Loading data into C++ matrix...")
 model:load(train)
