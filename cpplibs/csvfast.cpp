@@ -341,7 +341,7 @@ static int l_count_rows(lua_State* L) {
 }
 
 // VARIANCE
-static int l_variance(lua_State* L) {
+/*static int l_variance(lua_State* L) {
 	luaL_checktype(L, 1, LUA_TTABLE);
 	double sum = 0.0;
 	int n = 0;
@@ -378,7 +378,7 @@ static int l_variance(lua_State* L) {
 
 	lua_pushnumber(L, var / n);
 	return 1;
-}
+}*/
 
 // TO NUMBER
 static int l_to_number(lua_State* L) {
@@ -570,7 +570,7 @@ static const luaL_Reg funcs[] = {
 	{"count_rows", l_count_rows},
 	{"each", l_each},
 	{"to_number", l_to_number},
-	{"variance", l_variance},
+	// {"variance", l_variance},
 	{NULL, NULL}
 };
 
