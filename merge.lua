@@ -164,7 +164,6 @@ model:fit(train, 0.05, 5000, 0.8, 0.02)
 local mse = model:mse(test)
 local r2  = model:r2(test)
 
--- Para MAE, si no lo implementamos en C++, seguimos usando cstats
 local y_true, y_pred = {}, {}
 for i = 1, #test, 1 do
 	y_true[i] = test[i].log_price
