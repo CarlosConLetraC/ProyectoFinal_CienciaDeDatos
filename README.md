@@ -10,15 +10,16 @@ El proyecto abstrae la complejidad de las rutas y dependencias de LuaJIT mediant
 
 * **`./cmd` (Interface de Ejecución Directa)**:
     Permite ejecutar sentencias Lua aisladas directamente desde la terminal de Linux. Es ideal para inspeccionar el estado del sistema o probar funciones rápidas de las librerías cargadas.
-    - *Ejemplo de uso*: `./cmd "system.print('Inspección de sistema', {{os}, 5})"`
+    - *Ejemplo real*: `./cmd "system.print('Esto es un ejemplo', {{os}, 5, 10, 15})"`
 
 * **`./initconsole` (Entorno REPL Interactivo)**:
     Lanza una consola interactiva (Read-Eval-Print Loop) con el núcleo del sistema (`import/init`) y librerías base (`Math`, `Table`, `system`) precargadas.
     - *Uso matemático*: `import('Vector3'); system.print(Vector3.one + Vector3.new(5,15,10))`
-    - *Modo Scripting*: Soporta el flag `--exec` para ejecutar lógica compleja (como iteraciones de tablas) antes de entrar en modo interactivo.
+    - *Modo Scripting*: Soporta el flag `--exec` para ejecutar lógica compleja antes de entrar en modo interactivo.
+    - *Ejemplo de inspección*: `./initconsole --exec "for k, v in Table.methods.iter do print(k, v) end"`
 
 * **`./runclient` (Lanzador de Aplicaciones)**:
-    Punto de entrada para los scripts de producción (`program.main.lua`). Gestiona la carga automática de plugins y el sistema de módulos antes de iniciar el proceso principal.
+    Punto de entrada para los scripts de producción (como `program.main.lua` o `merge.lua`). Gestiona la carga automática de plugins y el sistema de módulos antes de iniciar el proceso principal.
 
 ---
 
@@ -27,26 +28,25 @@ El proyecto abstrae la complejidad de las rutas y dependencias de LuaJIT mediant
 El proyecto garantiza portabilidad absoluta y consistencia de entorno mediante contenedores y scripts de orquestación.
 
 ### 🐳 Gestión de Contenedores (`pods.sh`)
-Define funciones para estandarizar el flujo de trabajo con **Podman**:
+Script externo que define funciones para estandarizar el flujo de trabajo con **Podman**:
 * `podmanbuild`: Construye la imagen asegurando que todas las dependencias (GCC, LuaJIT, Python) estén presentes.
 * `podmanrun`: Ejecuta el contenedor con `--userns=keep-id` y montajes de volumen `:Z` para permitir persistencia de datos con los permisos de usuario del host.
 
 ### 🏗 Setup y Compilación
-* **`configurarentorno.sh`**: Script de bootstrap que configura el entorno virtual de Python (`venv`), instala dependencias de sistema y prepara el gestor de paquetes `luarocks`.
-* **`build.sh`**: Punto de entrada para la compilación del binario `backend` en C++17, optimizado para el hardware local mediante la detección automática de núcleos.
+* **`configurarentorno.sh`**: Script de bootstrap que configura el entorno virtual de Python (`entorno/`), instala dependencias de sistema y prepara el gestor de paquetes `luarocks`.
+* **`build.sh`**: Punto de entrada para la compilación del binario `backend` en C++17, optimizado para el hardware local.
 
 ---
 
 ## 3. Pipeline de Procesamiento de Datos (`run.sh`)
 
-El archivo `run.sh` coordina el flujo completo de ciencia de datos:
+El archivo `run.sh` coordina el flujo completo de ciencia de datos de forma secuencial:
 
-1.  **Validación**: Verifica la presencia de LuaJIT y el entorno virtual de Python.
-2.  **Particionamiento**: `program.main.lua` divide el dataset original en fragmentos (shards) y genera una cola de trabajos en `daemons/`.
-3.  **Procesamiento Concurrente (`backend`)**: El binario de C++ distribuye los shards entre hilos paralelos. Cada hilo ejecuta un worker LuaJIT para limpieza (`NaN`), normalización y **One-Hot Encoding**.
-4.  **Consolidación**: `merge.lua` reúne los resultados procesados en un único dataset listo para el modelo.
-5.  **Entrenamiento**: El motor C++ calcula la Regresión Lineal Múltiple y exporta los pesos a `model_final.json`.
-6.  **Visualización**: Se activan scripts de Python para generar gráficas de diagnóstico en el directorio `/plots`.
+1.  **Generación de Jobs**: `runclient program.main.lua` particiona el dataset original `data/train.csv` en múltiples fragmentos (`dataset_train_*.csv`) y crea la cola en `daemons/`.
+2.  **Procesamiento Concurrente (`backend`)**: El binario de C++ distribuye los shards entre hilos paralelos. Cada hilo ejecuta un worker LuaJIT para limpieza, normalización y **One-Hot Encoding**.
+3.  **Consolidación**: `runclient merge.lua` unifica los resultados procesados en un único set de datos.
+4.  **Entrenamiento**: El motor C++ calcula la Regresión Lineal Múltiple y exporta los pesos a `data/model_final.json`.
+5.  **Visualización**: Se ejecuta **`el_de_los_mandados.py`** para generar las gráficas de diagnóstico en el directorio `/plots`.
 
 ---
 
@@ -74,13 +74,11 @@ Basado en el procesamiento de **74,113 registros**, el sistema reporta:
 4. **Ejecutar experimento**: `./run.sh`
 
 ---
-
 ## Instalación del software
 ```bash
-git clone --recursive https://github.com/CarlosConLetraC/ProyectoFinal_CienciaDeDatos.git
+git clone --recursive [https://github.com/CarlosConLetraC/ProyectoFinal_CienciaDeDatos.git](https://github.com/CarlosConLetraC/ProyectoFinal_CienciaDeDatos.git)
 cd ProyectoFinal_CienciaDeDatos
 chmod +x initconsole cmd runclient *.sh
-```
 
 ---
 
