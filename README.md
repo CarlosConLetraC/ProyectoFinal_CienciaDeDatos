@@ -79,7 +79,7 @@ Basado en el procesamiento de **74,113 registros**, el sistema reporta:
 git clone --recursive "https://github.com/CarlosConLetraC/ProyectoFinal_CienciaDeDatos.git"
 cd ProyectoFinal_CienciaDeDatos
 chmod +x initconsole cmd runclient *.sh
-
+```
 ---
 
 # Configurar el entorno (recomendado usar podman)
