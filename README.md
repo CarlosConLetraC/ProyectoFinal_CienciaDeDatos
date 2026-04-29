@@ -90,7 +90,7 @@ chmod +x initconsole cmd runclient *.sh
 ```
 ---
 
-# Compilar únicamente backend.cpp
+# Compilar backend.cpp
 ```bash
 ./build.sh
 ```
