@@ -82,6 +82,13 @@ chmod +x initconsole cmd runclient *.sh
 ```
 ---
 
+## Sistemas compatibles
+
+- Debian 13 (Trixie)
+- Ubuntu 22.04 (Jammy)
+
+---
+
 # Configurar el entorno (recomendado usar podman)
 ```bash
 ./configurarentorno.sh
