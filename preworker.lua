@@ -139,10 +139,10 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 			host_verified    = bool(r["host_identity_verified"]),
 
 			-- Comparación de strings
-			room_entire  = (room:find("entire")) and 1 or 0,
-			room_private = (room:find("private")) and 1 or 0,
-			room_shared  = (room:find("shared")) and 1 or 0,
-			is_apartment = (prop:find("apartment")) and 1 or 0
+			room_entire  = (string.find(room, "entire")) and 1 or 0,
+			room_private = (string.find(room, "private")) and 1 or 0,
+			room_shared  = (string.find(room, "shared")) and 1 or 0,
+			is_apartment = (string.find(prop, "apartment")) and 1 or 0
 		}
 		train:iput(row)
 	end, {
@@ -160,17 +160,16 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 			output_table[colName] = {}
 		end
 
-		-- dataset es tu objeto 'train' (csvfast.Table)
+		-- dataset es el objeto 'train' (csvfast -> Table)
 		for i = 1, dataset:len() do
 			local r = dataset[i] 
 			for _, colName in ipairs(COLUMN_ORDER) do
-				-- Asegúrate de que r[colName] no sea nil
+				-- Asegurando que r[colName] no sea nil
 				local val = r[colName] or 0
 				table.insert(output_table[colName], val)
 			end
 		end
 
-		-- IMPORTANTE: Verifica si el archivo se escribe bien
 		csvfast.save_columns(output_table, outprefix .. "_" .. workerId .. ".csv", COLUMN_ORDER)
 	end
 

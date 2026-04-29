@@ -193,7 +193,7 @@ static int l_read_columns(lua_State* L) {
         }
     }
 
-    // Leemos los datos crudos primero para poder decidir dinámicamente
+    // Leemos los datos crudos primero para poder decidir dinamicamente
     std::vector<std::vector<std::string>> raw;
     while (std::getline(file, line)) {
         line = clean_cr(line);
@@ -202,7 +202,7 @@ static int l_read_columns(lua_State* L) {
     }
     t->rows = (int)raw.size();
 
-    // Exportación a LUA mejorada
+    // Exportar a LUA mejorada
     lua_newtable(L);
     for (int c = 0; c < t->cols; c++) {
         lua_newtable(L);
@@ -210,7 +210,7 @@ static int l_read_columns(lua_State* L) {
             std::string v = (c < (int)raw[r].size()) ? raw[r][c] : "";
             
             double x;
-            // Intentamos número primero, si falla o el schema dice string, mandamos string
+            // Intentamos numero primero, si falla o el schema dice string, mandamos string
             if (as_number[c] && to_number(v, x)) {
                 lua_pushnumber(L, x);
             } else {
@@ -270,7 +270,7 @@ static int l_save_columns(lua_State* L) {
     }
     out << "\n";
 
-    // 4. Calcular el número máximo de filas revisando las tablas de las columnas
+    // 4. Calcular el numero maximo de filas revisando las tablas de las columnas
     int row_count = 0;
     for (const auto& h : headers) {
         lua_getfield(L, 1, h.c_str());
@@ -297,7 +297,7 @@ static int l_save_columns(lua_State* L) {
                 } 
                 else if (type == LUA_TSTRING) {
                     std::string s = lua_tostring(L, -1);
-                    // Sanitización para CSV
+                    // Sanitizacion para CSV
                     bool needs_quotes = (s.find(',') != std::string::npos || s.find('"') != std::string::npos);
                     if (needs_quotes) {
                         out << "\"";
@@ -454,13 +454,13 @@ static int l_each(lua_State* L) {
             std::string v = (c < (int)cols.size()) ? cols[c] : "";
 
             double num;
-            // CAMBIO CLAVE: Intentar número, pero respaldar con String sanitizado
+            // CAMBIO CLAVE: Intentar numero, pero respaldar con String sanitizado
             if (to_number(v, num)) {
                 lua_pushnumber(L, num);
             } else {
                 std::string s = sanitize(v);
                 if (s.empty()) {
-                    // Si el schema pedía número pero está vacío, mandamos NAN para no romper cálculos
+                    // Si el schema pedia numero pero esta vacio, mandamos NAN para no romper calculos
                     if (as_number[c]) lua_pushnumber(L, NAN);
                     else lua_pushnil(L);
                 } else {
@@ -488,13 +488,13 @@ static int l_export_rows(lua_State* L) {
 	if (!out.is_open()) return luaL_error(L, "cannot open output file");
 
 	int row_count = (int)lua_rawlen(L, 1);
-	if (row_count == 0) return luaL_error(L, "dataset vacío");
+	if (row_count == 0) return luaL_error(L, "dataset vacio");
 
 	// 1. HEADERS desde fila 1 (orden estable + completo)
 	lua_rawgeti(L, 1, 1);
 	if (!lua_istable(L, -1)) {
 		lua_pop(L, 1);
-		return luaL_error(L, "row[1] inválida");
+		return luaL_error(L, "row[1] invalida");
 	}
 	std::vector<std::string> headers;
 	lua_pushnil(L);
