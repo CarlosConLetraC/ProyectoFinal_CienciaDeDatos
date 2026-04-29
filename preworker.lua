@@ -150,7 +150,9 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 		}
 		train:iput(row)
 	end, {
-		schema = FEATURES
+		schema = FEATURES,
+		start = start,
+		limit = limit
 	})
 
 	print("[Worker "..workerId.."] train:", train:len())
