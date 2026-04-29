@@ -16,7 +16,7 @@ El proyecto abstrae la complejidad de las rutas y dependencias de LuaJIT mediant
     Lanza una consola interactiva (Read-Eval-Print Loop) con el núcleo del sistema (`import/init`) y librerías base (`Math`, `0`, `system`) precargadas.
     - *Uso matemático*: `import('Vector3'); system.print(Vector3.one + Vector3.new(5,15,10))`
     - *Modo Scripting*: Soporta el flag `--exec` para ejecutar lógica compleja antes de entrar en modo interactivo.
-    - *Ejemplo de inspección*: `./initconsole --exec "for k, v in Table.iter do print(k, v) end"`
+    - *Ejemplo de inspección*: `./initconsole --exec "for k, v in Table.iter do system.print(k, v) end"`
 
 * **`./runclient` (Lanzador de Aplicaciones)**:
     Punto de entrada para los scripts de producción (como `program.main.lua` o `merge.lua`). Gestiona la carga automática de plugins y el sistema de módulos antes de iniciar el proceso principal.
