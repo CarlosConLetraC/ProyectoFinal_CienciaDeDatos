@@ -4,6 +4,7 @@
 *.docx
 *.so
 data/*.csv
+.tmp
 data/stats.json
 data/coeficientes.json
 data/actividad*

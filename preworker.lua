@@ -55,7 +55,10 @@ end
 
 local function clean_str(s)
     if not s then return "" end
-    return tostring(s):lower():gsub('"', ''):gsub('^%s*(.-)%s*$', '%1')
+	s = string.lower(tostring(s))
+	s = string.gsub(s, '"', '')
+	s = string.gsub(s, '^%s*(.-)%s*$', '%1')
+    return s
 end
 
 local preworker = {}
@@ -101,22 +104,15 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 
 	-- DATASET
 	local train = Table.new()
-	--local idx = 0
 
 	csvfast.each(base, function(r)
-		--[[idx = idx + 1
-
-		if idx <= 5 then
-			Table.stream(r, true, string.format("debug_row_%d.lua", idx))
-		end]]
-
 		-- target
-		local y = safe_num(r.log_price) or 0
-		local acc = safe_num(r.accommodates) or 0
+		local y    = safe_num(r.log_price) or 0
+		local acc  = safe_num(r.accommodates) or 0
 		local bath = safe_num(r.bathrooms) or 0
-		local bed = safe_num(r.bedrooms) or 0
+		local bed  = safe_num(r.bedrooms) or 0
 		local beds = safe_num(r.beds) or 0
-		local rat = safe_num(r.review_scores_rating) or 0
+		local rat  = safe_num(r.review_scores_rating) or 0
 
 		-- Acceso mas seguro usando r["nombre"] por si r.nombre falla
 		local room = clean_str(r["room_type"])
@@ -138,7 +134,7 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 			instant_bookable = bool(r["instant_bookable"]),
 			host_verified    = bool(r["host_identity_verified"]),
 
-			-- Comparación de strings
+			-- Comparacion de strings
 			room_entire  = (string.find(room, "entire")) and 1 or 0,
 			room_private = (string.find(room, "private")) and 1 or 0,
 			room_shared  = (string.find(room, "shared")) and 1 or 0,
@@ -161,7 +157,7 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 		end
 
 		-- dataset es el objeto 'train' (csvfast -> Table)
-		for i = 1, dataset:len() do
+		for i = 1, dataset:len(), 1 do
 			local r = dataset[i] 
 			for _, colName in ipairs(COLUMN_ORDER) do
 				-- Asegurando que r[colName] no sea nil
