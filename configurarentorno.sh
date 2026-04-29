@@ -249,7 +249,7 @@ prettyprint 0 "Instalando dependencias Python. . ."
 
 prettyprint 0 "Instalacion completada correctamente."
 
-if [ ! -d "$BASE_PATH/data/train.csv" ]; then
+if [ ! -f "$BASE_PATH/data/train.csv" ]; then
 	cd "$BASE_PATH/data"
 	unzip train.csv.zip
 	cd -
