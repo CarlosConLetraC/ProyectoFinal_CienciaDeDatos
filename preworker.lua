@@ -1,4 +1,4 @@
-import("csvfast", "Table")
+import("csvfast")
 
 -- CONFIG
 local FEATURES = {
@@ -103,7 +103,7 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 	print(string.format("[Worker %d] start=%d limit=%d", workerId, start, limit))
 
 	-- DATASET
-	local train = Table.new()
+	local train = {}
 
 	csvfast.each(base, function(r)
 		-- target
@@ -140,14 +140,15 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 			room_shared  = (string.find(room, "shared")) and 1 or 0,
 			is_apartment = (string.find(prop, "apartment")) and 1 or 0
 		}
-		train:iput(row)
+		--train:iput(row)
+		train[#train + 1] = row
 	end, {
 		schema = FEATURES,
 		start = start,
 		limit = limit
 	})
 
-	print("[Worker "..workerId.."] train:", train:len())
+	print("[Worker "..workerId.."] train:", #train)
 
 	-- EXPORT
 	local function export(dataset, outprefix)
@@ -157,8 +158,8 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 		end
 
 		-- dataset es el objeto 'train' (csvfast -> Table)
-		for i = 1, dataset:len(), 1 do
-			local r = dataset[i] 
+		for i = 1, #dataset, 1 do
+			local r = dataset[i]
 			for _, colName in ipairs(COLUMN_ORDER) do
 				-- Asegurando que r[colName] no sea nil
 				local val = r[colName] or 0
