@@ -118,7 +118,7 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 		local beds = safe_num(r.beds) or 0
 		local rat = safe_num(r.review_scores_rating) or 0
 
-		-- Acceso más seguro usando r["nombre"] por si r.nombre falla
+		-- Acceso mas seguro usando r["nombre"] por si r.nombre falla
 		local room = clean_str(r["room_type"])
 		local prop = clean_str(r["property_type"])
 
