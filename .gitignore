@@ -24,3 +24,4 @@ daemons
 test*
 resultado_*
 debug*
+data/model_final.json

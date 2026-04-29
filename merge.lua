@@ -1,8 +1,6 @@
 import("csvfast", "json", "cml", "cstats", "task")
 
--- =========================
 -- SHARD DISCOVERY
--- =========================
 local function list_files(prefix)
 	local p = io.popen("ls data/" .. prefix .. "_*.csv 2>/dev/null")
 	if not p then return {} end
@@ -47,15 +45,11 @@ if #train_shards == 0 then
 	error("no train shards found")
 end
 
--- =========================
 -- STORAGE
--- =========================
 local train = {}
 local test  = {}
 
--- =========================
 -- SCHEMA
--- =========================
 local schema = {
 	log_price = true,
 	accommodates = true,
@@ -75,9 +69,7 @@ local schema = {
 	is_apartment = true
 }
 
--- =========================
 -- LOADER (SAFE)
--- =========================
 local function loader(shards, target, label)
 	for _, s in ipairs(shards) do
 		print("["..label.."] loading:", s.path)
@@ -126,9 +118,7 @@ while task.step() do end
 print("Train size:", #train)
 print("Test size :", #test)
 
--- =========================
 -- IMPORTANT FIX: SINGLE SPLIT ONLY
--- =========================
 local function split(data, ratio)
 	local n = #data
 	if n < 10 then
@@ -155,14 +145,10 @@ if #test == 0 then
 	train, test = split(train, 0.8)
 end
 
--- =========================
 -- FEATURES
--- =========================
 local features = {"accommodates", "bathrooms", "bedrooms", "beds", "reviews", "rating", "lat", "lon", "cleaning_fee", "instant_bookable", "host_verified", "room_entire", "room_private", "room_shared", "is_apartment"}
 
--- =========================
 -- MODEL
--- =========================
 local model = cml.LinearRegression({
     features = features,
     target = "log_price"
