@@ -133,8 +133,8 @@ local function split(data, ratio)
 	local trainSet = {}
 	local testSet  = {}
 
-	for i = 1, split do trainSet[#trainSet+1] = data[i] end
-	for i = split+1, n do testSet[#testSet+1] = data[i] end
+	for i = 1, split, 1 do trainSet[#trainSet+1] = data[i] end
+	for i = split+1, n, 1 do testSet[#testSet+1] = data[i] end
 
 	return trainSet, testSet
 end
@@ -166,7 +166,7 @@ local r2  = model:r2(test)
 
 -- Para MAE, si no lo implementamos en C++, seguimos usando cstats
 local y_true, y_pred = {}, {}
-for i = 1, #test do
+for i = 1, #test, 1 do
 	y_true[i] = test[i].log_price
 	y_pred[i] = model:predict(test[i])
 end
