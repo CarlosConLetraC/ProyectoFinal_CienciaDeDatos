@@ -165,99 +165,67 @@ static std::string unquote(std::string s) {
 
 // READ COLUMNS
 static int l_read_columns(lua_State* L) {
-	const char* path = luaL_checkstring(L, 1);
-	bool has_config = lua_istable(L, 2);
+    const char* path = luaL_checkstring(L, 1);
+    bool has_config = lua_istable(L, 2);
 
-	std::ifstream file(path);
-	if (!file.is_open()) return luaL_error(L, "cannot open file");
+    std::ifstream file(path);
+    if (!file.is_open()) return luaL_error(L, "cannot open file");
 
-	std::string line;
-	if (!std::getline(file, line)) return luaL_error(L, "empty file");
+    std::string line;
+    if (!std::getline(file, line)) return luaL_error(L, "empty file");
 
-	std::vector<std::string> headers = split_line(line);
+    std::vector<std::string> headers = split_line(line);
 
-	CSVTable* t = new CSVTable();
-	t->cols = (int)headers.size();
-	t->headers = headers;
+    CSVTable* t = new CSVTable();
+    t->cols = (int)headers.size();
+    t->headers = headers;
 
-	// TYPE MAP (solo true = number)
-	std::vector<bool> as_number(t->cols, false);
+    std::vector<bool> as_number(t->cols, false);
+    if (has_config) {
+        for (int c = 0; c < t->cols; c++) {
+            lua_getfield(L, 2, headers[c].c_str());
+            if (lua_isboolean(L, -1)) {
+                as_number[c] = lua_toboolean(L, -1);
+            } else {
+                as_number[c] = false; 
+            }
+            lua_pop(L, 1);
+        }
+    }
 
-	if (has_config) {
-		for (int c = 0; c < t->cols; c++) {
-			lua_getfield(L, 2, headers[c].c_str());
+    // Leemos los datos crudos primero para poder decidir dinámicamente
+    std::vector<std::vector<std::string>> raw;
+    while (std::getline(file, line)) {
+        line = clean_cr(line);
+        if (!trim(line).empty())
+            raw.push_back(split_line(line));
+    }
+    t->rows = (int)raw.size();
 
-			if (lua_isnil(L, -1)) {
-				as_number[c] = false; // default: string
-			}
-			else if (lua_isboolean(L, -1)) {
-				as_number[c] = lua_toboolean(L, -1);
-			}
-			else {
-				return luaL_error(L, "schema must be true/false/nil");
-			}
+    // Exportación a LUA mejorada
+    lua_newtable(L);
+    for (int c = 0; c < t->cols; c++) {
+        lua_newtable(L);
+        for (int r = 0; r < t->rows; r++) {
+            std::string v = (c < (int)raw[r].size()) ? raw[r][c] : "";
+            
+            double x;
+            // Intentamos número primero, si falla o el schema dice string, mandamos string
+            if (as_number[c] && to_number(v, x)) {
+                lua_pushnumber(L, x);
+            } else {
+                std::string s = sanitize(v);
+                if (s.empty() && is_invalid(v)) lua_pushnil(L);
+                else lua_pushstring(L, s.c_str());
+            }
+            lua_rawseti(L, -2, r + 1);
+        }
+        lua_setfield(L, -2, t->headers[c].c_str());
+    }
 
-			lua_pop(L, 1);
-		}
-	}
-
-	t->is_numeric.assign(t->cols, false);
-	t->num_cols.resize(t->cols);
-
-	std::vector<std::vector<std::string>> raw;
-	raw.reserve(1000);
-
-	// READ ALL ROWS
-	while (std::getline(file, line)) {
-		line = clean_cr(line);
-		if (!trim(line).empty())
-			raw.push_back(split_line(line));
-	}
-
-	t->rows = (int)raw.size();
-
-	// BUILD NUMERIC COLUMNS
-	for (int c = 0; c < t->cols; c++) {
-		if (!as_number[c]) continue;
-		t->is_numeric[c] = true;
-		t->num_cols[c].reserve(t->rows);
-
-		for (int r = 0; r < t->rows; r++) {
-			std::string v = (c < (int)raw[r].size()) ? raw[r][c] : "";
-
-			double x;
-			if (to_number(v, x))
-				t->num_cols[c].push_back(x);
-			else
-				t->num_cols[c].push_back(NAN);
-		}
-	}
-
-	// EXPORT TO LUA
-	lua_newtable(L);
-
-	for (int c = 0; c < t->cols; c++) {
-		lua_newtable(L);
-		if (as_number[c]) {
-			const auto& col = t->num_cols[c];
-			for (size_t i = 0; i < col.size(); i++) {
-				lua_pushnumber(L, col[i]);
-				lua_rawseti(L, -2, i + 1);
-			}
-		} else {
-			for (int r = 0; r < t->rows; r++) {
-				std::string v = (c < (int)raw[r].size()) ? sanitize(raw[r][c]) : "";
-				lua_pushstring(L, v.c_str());
-				lua_rawseti(L, -2, r + 1);
-			}
-		}
-
-		lua_setfield(L, -2, t->headers[c].c_str());
-	}
-	lua_pushlightuserdata(L, t);
-	lua_setfield(L, -2, "_ptr");
-
-	return 1;
+    lua_pushlightuserdata(L, t);
+    lua_setfield(L, -2, "_ptr");
+    return 1;
 }
 
 // SAVE COLUMNS
@@ -430,148 +398,88 @@ static int l_to_number(lua_State* L) {
 
 // EACH
 static int l_each(lua_State* L) {
-	const char* path = luaL_checkstring(L, 1);
-	luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char* path = luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    if (!lua_istable(L, 3)) return luaL_error(L, "config table required");
 
-	// ---- CONFIG ----
-	if (!lua_istable(L, 3)) {
-		return luaL_error(L, "config table required");
-	}
+    int config_idx = 3;
+    int start_row = 1, offset = 0, sample = 1, limit = INT_MAX;
 
-	int config_idx = 3;
+    // ... (Carga de opciones start_row, offset, sample, limit igual que antes) ...
+    lua_getfield(L, config_idx, "start_row"); if (lua_isnumber(L, -1)) start_row = (int)lua_tointeger(L, -1); lua_pop(L, 1);
+    lua_getfield(L, config_idx, "offset"); if (lua_isnumber(L, -1)) offset = (int)lua_tointeger(L, -1); lua_pop(L, 1);
+    lua_getfield(L, config_idx, "sample"); if (lua_isnumber(L, -1)) sample = (int)lua_tointeger(L, -1); lua_pop(L, 1);
+    lua_getfield(L, config_idx, "limit"); if (lua_isnumber(L, -1)) limit = (int)lua_tointeger(L, -1); lua_pop(L, 1);
+    if (sample <= 0) sample = 1;
 
-	int start_row = 1;
-	int offset = 0;
-	int sample = 1;
-	int limit = INT_MAX;
+    std::ifstream file(path);
+    if (!file.is_open()) return luaL_error(L, "cannot open file");
 
-	// OPTIONS
-	lua_getfield(L, config_idx, "start_row");
-	if (lua_isnumber(L, -1))
-		start_row = (int)lua_tointeger(L, -1);
-	lua_pop(L, 1);
+    std::string line;
+    if (!std::getline(file, line)) return 0;
 
-	lua_getfield(L, config_idx, "offset");
-	if (lua_isnumber(L, -1))
-		offset = (int)lua_tointeger(L, -1);
-	lua_pop(L, 1);
+    std::vector<std::string> raw_headers = split_line(line);
+    int cols_n = (int)raw_headers.size();
+    std::vector<std::string> headers(cols_n);
+    for (int c = 0; c < cols_n; c++) headers[c] = trim(clean_cr(raw_headers[c]));
 
-	lua_getfield(L, config_idx, "sample");
-	if (lua_isnumber(L, -1))
-		sample = (int)lua_tointeger(L, -1);
-	lua_pop(L, 1);
+    lua_getfield(L, config_idx, "schema");
+    if (!lua_istable(L, -1)) return luaL_error(L, "config.schema required");
+    int schema_idx = lua_gettop(L);
 
-	lua_getfield(L, config_idx, "limit");
-	if (lua_isnumber(L, -1))
-		limit = (int)lua_tointeger(L, -1);
-	lua_pop(L, 1);
+    std::vector<bool> as_number(cols_n, false);
+    for (int c = 0; c < cols_n; c++) {
+        lua_getfield(L, schema_idx, headers[c].c_str());
+        as_number[c] = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1); // pop schema
 
-	if (sample <= 0) sample = 1;
+    int i = 0, emitted = 0;
+    while (std::getline(file, line)) {
+        line = clean_cr(line);
+        if (trim(line).empty()) continue;
+        i++;
+        if (i < start_row) continue;
+        int rel_i = i - start_row + 1;
+        if (rel_i <= offset || ((rel_i - offset) % sample) != 0) continue;
 
-	// ---- FILE ----
-	std::ifstream file(path);
-	if (!file.is_open())
-		return luaL_error(L, "cannot open file");
+        std::vector<std::string> cols = split_line(line);
+        lua_pushvalue(L, 2); // callback
+        lua_newtable(L);     // row
 
-	std::string line;
-	if (!std::getline(file, line))
-		return 0;
+        for (int c = 0; c < cols_n; c++) {
+            const std::string& h = headers[c];
+            if (h.empty()) continue;
+            std::string v = (c < (int)cols.size()) ? cols[c] : "";
 
-	// ---- HEADERS ----
-	std::vector<std::string> raw_headers = split_line(line);
-	int cols_n = (int)raw_headers.size();
+            double num;
+            // CAMBIO CLAVE: Intentar número, pero respaldar con String sanitizado
+            if (to_number(v, num)) {
+                lua_pushnumber(L, num);
+            } else {
+                std::string s = sanitize(v);
+                if (s.empty()) {
+                    // Si el schema pedía número pero está vacío, mandamos NAN para no romper cálculos
+                    if (as_number[c]) lua_pushnumber(L, NAN);
+                    else lua_pushnil(L);
+                } else {
+                    lua_pushstring(L, s.c_str());
+                }
+            }
+            lua_setfield(L, -2, h.c_str());
+        }
 
-	std::vector<std::string> headers(cols_n);
-
-	for (int c = 0; c < cols_n; c++) {
-		headers[c] = trim(clean_cr(raw_headers[c]));
-	}
-
-	// ---- SCHEMA OBLIGATORIO ----
-	lua_getfield(L, config_idx, "schema");
-
-	if (!lua_istable(L, -1)) {
-		return luaL_error(L, "config.schema required");
-	}
-
-	int schema_idx = lua_gettop(L);
-
-	// ---- TYPE MAP ----
-	std::vector<bool> as_number(cols_n, false);
-
-	for (int c = 0; c < cols_n; c++) {
-		const std::string& h = headers[c];
-		if (h.empty()) continue;
-
-		lua_getfield(L, schema_idx, h.c_str());
-
-		if (lua_isboolean(L, -1)) {
-			as_number[c] = lua_toboolean(L, -1); 
-			// true = number
-			// false = string
-		} else {
-			// NIL o inexistente → DEFAULT STRING
-			as_number[c] = false;
-		}
-
-		lua_pop(L, 1);
-	}
-
-	lua_pop(L, 1); // pop schema
-
-	// ---- STREAM ----
-	int i = 0;
-	int emitted = 0;
-
-	while (std::getline(file, line)) {
-		line = clean_cr(line);
-		if (trim(line).empty()) continue;
-
-		i++;
-		if (i < start_row) continue;
-
-		int rel_i = i - start_row + 1;
-		if (rel_i <= offset) continue;
-		if (((rel_i - offset) % sample) != 0) continue;
-
-		std::vector<std::string> cols = split_line(line);
-
-		lua_pushvalue(L, 2); // callback
-		lua_newtable(L);     // row
-
-		for (int c = 0; c < cols_n; c++) {
-			const std::string& h = headers[c];
-			if (h.empty()) continue;
-
-			std::string v = (c < (int)cols.size()) ? cols[c] : "";
-
-			if (as_number[c]) {
-				double num;
-				if (to_number(v, num))
-					lua_pushnumber(L, num);
-				else
-					lua_pushnumber(L, NAN);
-			} else {
-				std::string s = sanitize(v);
-				lua_pushstring(L, s.c_str());
-			}
-
-			lua_setfield(L, -2, h.c_str());
-		}
-
-		emitted++;
-
-		lua_pushinteger(L, emitted);
-		lua_pushinteger(L, i);
-
-		lua_call(L, 3, 0);
-
-		if (emitted >= limit) break;
-	}
-
-	file.close();
-	return 0;
+        emitted++;
+        lua_pushinteger(L, emitted);
+        lua_pushinteger(L, i);
+        lua_call(L, 3, 0);
+        if (emitted >= limit) break;
+    }
+    file.close();
+    return 0;
 }
+
 static int l_export_rows(lua_State* L) {
 	luaL_checktype(L, 1, LUA_TTABLE);
 	const char* path = luaL_checkstring(L, 2);
@@ -620,28 +528,22 @@ static int l_export_rows(lua_State* L) {
 			int t = lua_type(L, -1);
 			if (t == LUA_TNUMBER) {
 				double v = lua_tonumber(L, -1);
-				if (std::isfinite(v))
-					out << v;
-				else
-					out << "NaN";
+				if (std::isfinite(v)) out << v;
+				else out << ""; // Celda vacia en lugar de texto "NaN"
 			}
 			else if (t == LUA_TSTRING) {
 				std::string s = lua_tostring(L, -1);
-				if (is_invalid(s)) {
-					out << "NaN";
-				} else {
-					s = sanitize(s);
-					bool quote = (s.find(',') != std::string::npos || s.find('"') != std::string::npos);
-					if (quote) {
-						out << "\"";
-						for (char ch : s) {
-							if (ch == '"') out << "\"\"";
-							else out << ch;
-						}
-						out << "\"";
-					} else {
-						out << s;
+				s = sanitize(s);
+				bool quote = (s.find(',') != std::string::npos || s.find('"') != std::string::npos);
+				if (quote) {
+					out << "\"";
+					for (char ch : s) {
+						if (ch == '"') out << "\"\"";
+						else out << ch;
 					}
+					out << "\"";
+				} else {
+					out << s;
 				}
 			}
 			else {

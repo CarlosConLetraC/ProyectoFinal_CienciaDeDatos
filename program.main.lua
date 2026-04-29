@@ -7,7 +7,7 @@ preworker.start(
     PREFIX_SALIDA_REGRESION
 )]]
 
-local INT_TOTAL_WORKERS = 1
+local INT_TOTAL_WORKERS = 12
 local PATH_OUTPUT = "daemons"
 
 os.execute("mkdir -p " .. PATH_OUTPUT)

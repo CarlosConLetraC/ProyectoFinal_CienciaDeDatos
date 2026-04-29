@@ -104,12 +104,15 @@ function preworker.start(workerId, totalWorkers, base, prefix)
 	local idx = 0
 
 	csvfast.each(base, function(r)
-
 		if idx < start or idx >= start + limit then
 			idx = idx + 1
 			return
 		end
 		idx = idx + 1
+
+		if idx <= 5 then
+			Table.stream(r, true, string.format("debug_row_%d.lua", idx))
+		end
 
 		-- target
 		local y = safe_num(r.log_price) or 0

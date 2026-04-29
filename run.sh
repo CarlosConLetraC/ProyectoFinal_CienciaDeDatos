@@ -37,5 +37,5 @@ source "$PWD/entorno/bin/activate"
 ./runclient program.main.lua
 ./backend daemons
 ./runclient merge.lua
-rm -rf daemons/*
-#python actividad_parte1.py
+rm -rf daemons/
+python el_de_los_mandados.py

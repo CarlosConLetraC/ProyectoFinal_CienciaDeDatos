@@ -23,3 +23,4 @@ daemons
 .env
 test*
 resultado_*
+debug*
