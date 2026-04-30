@@ -12,12 +12,16 @@
 // Estructura optimizada: el array de datos va al final (Flexible Array Member)
 typedef struct {
     size_t n;
-    double data[]; // Memoria contigua gestionada por Lua
+    double *data;
 } Array;
 
 // Helper para validar y obtener el objeto Array
 static Array* check_array(lua_State *L, int idx) {
-    return (Array*)luaL_checkudata(L, idx, "ArrayMT");
+    Array *arr = (Array*)luaL_checkudata(L, idx, "ArrayMT");
+    if (arr->data == NULL && arr->n > 0) {
+        luaL_error(L, "error: array already freed manually.");
+    }
+    return arr;
 }
 
 // CONSTRUCTOR: cstats.array({1, 2, 3})
@@ -25,10 +29,13 @@ static int l_array(lua_State *L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     size_t n = lua_rawlen(L, 1);
 
-    // Asignamos TODO en el espacio de userdata de Lua.
-    // Esto garantiza que si Lua se queda sin memoria aquí, no hay punteros huerfanos. . .
-    Array *arr = (Array*)lua_newuserdata(L, sizeof(Array) + (n * sizeof(double)));
+    // El struct vive en el GC de Lua (poca memoria)
+    Array *arr = (Array*)lua_newuserdata(L, sizeof(Array));
     arr->n = n;
+    
+    // El array de datos vive en el Heap del sistema (mucha memoria)
+    arr->data = (double*)malloc(n * sizeof(double));
+    if (!arr->data && n > 0) return luaL_error(L, "no hay memoria suficiente en el sistema");
 
     for (size_t i = 0; i < n; i++) {
         lua_rawgeti(L, 1, (lua_Integer)i + 1);
@@ -38,7 +45,6 @@ static int l_array(lua_State *L) {
 
     luaL_getmetatable(L, "ArrayMT");
     lua_setmetatable(L, -2);
-
     return 1;
 }
 
@@ -173,11 +179,15 @@ static int l_array_append(lua_State *L) {
     double val = luaL_checknumber(L, 2);
     size_t new_n = arr->n + 1;
 
-    // Creamos un nuevo objeto con espacio para n + 1
-    Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (new_n * sizeof(double)));
+    // 1. Crear el objeto userdata (asa)
+    Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array));
     new_arr->n = new_n;
+    
+    // 2. Reservar memoria nueva en el Heap
+    new_arr->data = (double*)malloc(new_n * sizeof(double));
+    if (!new_arr->data) return luaL_error(L, "Out of memory");
 
-    // Copiamos datos antiguos y agregamos el nuevo
+    // 3. Copiar y añadir
     memcpy(new_arr->data, arr->data, arr->n * sizeof(double));
     new_arr->data[arr->n] = val;
 
@@ -222,9 +232,24 @@ static int l_array_len(lua_State *L) {
     return 1;
 }
 
+static int l_array_gc(lua_State *L) {
+    Array *arr = (Array*)lua_touserdata(L, 1);
+    if (arr->data != NULL) {
+        free(arr->data);
+        arr->data = NULL;
+        arr->n = 0;
+    }
+    return 0;
+}
+
+// Liberar array de memoria manualmente desde Lua, o mejor dicho: un alias para el garbage collector. . .
+static int l_array_free(lua_State *L) {
+    // Simplemente llamamos al mismo destructor
+    return l_array_gc(L);
+}
+
 // Soporta: print(arr[1]) y arr:mean()
-static int l_array_index(lua_State *L) {
-    Array *arr = check_array(L, 1);
+static int l_array_index(lua_State *L) {    Array *arr = check_array(L, 1);
 
     if (lua_isnumber(L, 2)) {
         lua_Integer idx = lua_tointeger(L, 2);
@@ -250,23 +275,23 @@ static int l_array_tostring(lua_State *L) {
     
     // lua_touserdata devuelve el puntero genérico (la dirección de memoria)
     // El especificador %p en lua_pushfstring formatea automaticamente el puntero a hexadecimal
-    lua_pushfstring(L, "cstats.array: %p (%I elements)", lua_touserdata(L, 1), (lua_Integer)arr->n);
-    
+    lua_pushfstring(L, "cstats.array: %p (%d elements)", lua_touserdata(L, 1), (int)arr->n);
     return 1;
 }
 
 // REGISTRO Y METATABLA
 static const struct luaL_Reg array_methods[] = {
-    {"corr",   l_corr},
-    {"mae",    l_mae},
-    {"mean",   l_mean},
-    {"mse",    l_mse},
-    {"r2",     l_r2},
-    {"std",    l_std},
-    {"var",    l_var},
-	{"append", l_array_append},
-	{"slice",  l_array_slice},
-	{NULL, NULL}
+    {"corr",        l_corr},
+    {"mae",         l_mae},
+    {"mean",        l_mean},
+    {"mse",         l_mse},
+    {"r2",          l_r2},
+    {"std",         l_std},
+    {"var",         l_var},
+    {"append",      l_array_append},
+    {"slice",       l_array_slice},
+    {"free_memory", l_array_free},
+    {NULL, NULL}
 };
 
 int luaopen_cstats(lua_State *L) {
@@ -286,6 +311,9 @@ int luaopen_cstats(lua_State *L) {
 
     lua_pushcfunction(L, l_array_tostring);
     lua_setfield(L, -2, "__tostring");
+
+    lua_pushcfunction(L, l_array_gc);
+    lua_setfield(L, -2, "__gc");
 
     // 3. Libreria principal
     luaL_Reg funcs[] = {
