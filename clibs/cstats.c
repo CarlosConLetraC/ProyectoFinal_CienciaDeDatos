@@ -22,7 +22,7 @@ static int l_array(lua_State *L) {
     size_t n = lua_rawlen(L, 1);
 
     // Asignamos TODO en el espacio de userdata de Lua.
-    // Esto garantiza que si Lua se queda sin memoria aquí, no hay punteros huérfanos.
+    // Esto garantiza que si Lua se queda sin memoria aquí, no hay punteros huerfanos. . .
     Array *arr = (Array*)lua_newuserdata(L, sizeof(Array) + (n * sizeof(double)));
     arr->n = n;
 
@@ -38,8 +38,7 @@ static int l_array(lua_State *L) {
     return 1;
 }
 
-// METODOS ESTADISTICOS (Mucho más rápidos al ser punteros directos)
-
+// METODOS ESTADISTICOS (Mucho mas rapidos al ser punteros directos).
 static int l_mean(lua_State *L) {
     Array *arr = check_array(L, 1);
     if (arr->n == 0) { lua_pushnumber(L, 0); return 1; }
@@ -112,7 +111,7 @@ static int l_var(lua_State *L) {
 
 // STD
 static int l_std(lua_State *L) {
-    // Reutilizamos l_var para evitar duplicar lógica
+    // Reutilizamos l_var para evitar duplicar logica
     l_var(L); 
     double var = lua_tonumber(L, -1);
     lua_pushnumber(L, sqrt(var));
@@ -174,7 +173,7 @@ static int l_array_append(lua_State *L) {
     Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (new_n * sizeof(double)));
     new_arr->n = new_n;
 
-    // Copiamos datos antiguos y añadimos el nuevo
+    // Copiamos datos antiguos y agregamos el nuevo
     memcpy(new_arr->data, arr->data, arr->n * sizeof(double));
     new_arr->data[arr->n] = val;
 
@@ -188,11 +187,11 @@ static int l_array_slice(lua_State *L) {
     lua_Integer start = luaL_checkinteger(L, 2);
     lua_Integer end = luaL_optinteger(L, 3, (lua_Integer)arr->n);
 
-    // Ajuste de índices (Lua style: 1-based)
+    // Ajuste de indices (Lua usa indices desde 1)
     if (start < 1) start = 1;
     if (end > (lua_Integer)arr->n) end = (lua_Integer)arr->n;
     if (start > end) {
-        // Devolver array vacío si el rango es inválido
+        // Devolver array vacío si el rango es invalido
         Array *empty = (Array*)lua_newuserdata(L, sizeof(Array));
         empty->n = 0;
         luaL_getmetatable(L, "ArrayMT");
@@ -204,7 +203,7 @@ static int l_array_slice(lua_State *L) {
     Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (slice_n * sizeof(double)));
     new_arr->n = slice_n;
 
-    // Copiar la sección específica
+    // Copiar la seccion específica
     memcpy(new_arr->data, &arr->data[start - 1], slice_n * sizeof(double));
 
     luaL_getmetatable(L, "ArrayMT");
@@ -233,7 +232,7 @@ static int l_array_index(lua_State *L) {
         return 1;
     }
 
-    // Si no es un número, buscamos el método en la metatabla
+    // Si no es un número, buscamos el metodo en la metatabla
     lua_getmetatable(L, 1);
     lua_getfield(L, -1, "__methods"); // Tabla donde moveremos los métodos
     lua_pushvalue(L, 2);
@@ -246,7 +245,7 @@ static int l_array_tostring(lua_State *L) {
     Array *arr = (Array*)luaL_checkudata(L, 1, "ArrayMT");
     
     // lua_touserdata devuelve el puntero genérico (la dirección de memoria)
-    // El especificador %p en lua_pushfstring formatea automáticamente el puntero a hexadecimal
+    // El especificador %p en lua_pushfstring formatea automaticamente el puntero a hexadecimal
     lua_pushfstring(L, "cstats.array: %p (%I elements)", lua_touserdata(L, 1), (lua_Integer)arr->n);
     
     return 1;
