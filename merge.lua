@@ -1,4 +1,4 @@
-import("csvfast", "json", "cml", "cstats", "task")
+import("csvfast", "json", "cml", "cstats", "task", "Table")
 
 -- SHARD DISCOVERY (Se mantiene igual)
 local function list_files(prefix)
@@ -37,12 +37,11 @@ local function split_dataset(data, ratio)
     local n = #data
     if n < 2 then return data, {} end
 
-    -- Barajado aleatorio simple (opcional pero recomendado para ML)
-    -- Si prefieres mantener el orden original, comenta las siguientes 3 líneas
-    for i = n, 2, -1 do
+    --[[for i = n, 2, -1 do
         local j = math.random(i)
         data[i], data[j] = data[j], data[i]
-    end
+    end]]
+    Table.shuffle(data)    
 
     local split_idx = math.floor(n * ratio)
     local train_set = {}
@@ -96,14 +95,14 @@ print("Train size inicial:", #train)
 print("Test size inicial :", #test)
 
 if #test == 0 then
-    print("[WARN] No se detectaron archivos de test. Realizando split automático (80/20)...")
+    print("[WARN] No se detectaron archivos de test. Realizando split automatico (80/20)...")
     train, test = split_dataset(train, 0.8)
 end
 
 print("Final Train size:", #train)
 print("Final Test size :", #test)
 
-blund(not(#test == 0 or #train == 0), "Error: Conjuntos de datos vacíos. Revisa la ruta de los CSV.") -- assert pero con highlight. . .
+blund(not(#test == 0 or #train == 0), "Error: Conjuntos de datos vacios. Revisa la ruta de los CSV.")
 
 -- FEATURES & MODEL
 local features = {"accommodates", "bathrooms", "bedrooms", "beds", "reviews", "rating", "lat", "lon", "cleaning_fee", "instant_bookable", "host_verified", "room_entire", "room_private", "room_shared", "is_apartment"}
@@ -117,10 +116,6 @@ print("[MODEL] Fitting...")
 model:load(train)
 model:normalize()
 model:fit(train, 0.05, 5000, 0.8, 0.02)
-
--- ==========================================================
--- ADAPTACIÓN A NUEVO CSTATS
--- ==========================================================
 
 -- 1. Extraer vectores de la tabla test
 local t_true, t_pred = {}, {}
@@ -147,7 +142,7 @@ print(string.format("MSE : %.6f", mse))
 print(string.format("R2  : %.6f", r2))
 print(string.format("Corr: %.4f", corr))
 
--- EXPORTACIÓN
+-- EXPORTACION
 local out = {
     meta = { train = #train, test = #test, features = features },
     metrics = { mae = mae, mse = mse, r2 = r2, corr = corr },
