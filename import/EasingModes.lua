@@ -18,10 +18,9 @@ EasingModes[Enum.StyleMode.Bounce] = {
 		elseif t < (5/2) / d1 then
 			t = t + (-9/4) / d1
 			return n1 * t * t + 15/16
-		else
-			t = t + (-21/8) / d1
-			return n1 * t * t + 63/64
 		end
+		t = t + (-21/8) / d1
+		return n1 * t * t + 63/64
 	end,
 
 	[Enum.EaseMode.In] = function(t)
@@ -74,9 +73,8 @@ EasingModes[Enum.StyleMode.Exponential] = {
 		if t == 1 then return 1 end
 		if t < 0.5 then
 			return 2^(20 * t - 10) / 2
-		else
-			return (2 - 2^(-20 * t + 10)) / 2
 		end
+		return (2 - 2^(-20 * t + 10)) / 2
 	end,
 }
 
