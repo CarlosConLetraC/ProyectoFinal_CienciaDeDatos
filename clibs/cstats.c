@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if LUA_VERSION_NUM < 502
+#define lua_rawlen lua_objlen
+#endif
+
 // Estructura optimizada: el array de datos va al final (Flexible Array Member)
 typedef struct {
     size_t n;
