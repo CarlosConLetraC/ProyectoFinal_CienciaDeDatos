@@ -2,299 +2,293 @@
 #include <lauxlib.h>
 #include <math.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 
-/*
-Compatibilidad mejorada:
-- Acepta userdata + n   (puntero C)
-- Acepta tabla Lua      {1,2,3}
-- Validaciones extra
-- Evita division por cero
-- Soporta datasets grandes usando size_t internamente
-*/
+// Estructura optimizada: el array de datos va al final (Flexible Array Member)
+typedef struct {
+    size_t n;
+    double data[]; // Memoria contigua gestionada por Lua
+} Array;
 
-// HELPERS
-static int is_array_userdata(lua_State *L, int idx) {
-	return lua_isuserdata(L, idx);
+// Helper para validar y obtener el objeto Array
+static Array* check_array(lua_State *L, int idx) {
+    return (Array*)luaL_checkudata(L, idx, "ArrayMT");
 }
 
-static int is_array_table(lua_State *L, int idx) {
-	return lua_istable(L, idx);
+// CONSTRUCTOR: cstats.array({1, 2, 3})
+static int l_array(lua_State *L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    size_t n = lua_rawlen(L, 1);
+
+    // Asignamos TODO en el espacio de userdata de Lua.
+    // Esto garantiza que si Lua se queda sin memoria aquí, no hay punteros huérfanos.
+    Array *arr = (Array*)lua_newuserdata(L, sizeof(Array) + (n * sizeof(double)));
+    arr->n = n;
+
+    for (size_t i = 0; i < n; i++) {
+        lua_rawgeti(L, 1, (lua_Integer)i + 1);
+        arr->data[i] = luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+    }
+
+    luaL_getmetatable(L, "ArrayMT");
+    lua_setmetatable(L, -2);
+
+    return 1;
 }
 
-static size_t get_table_len(lua_State *L, int idx) {
-#if LUA_VERSION_NUM >= 502
-	return (size_t)lua_rawlen(L, idx);
-#else
-	return (size_t)lua_objlen(L, idx);
-#endif
-}
+// METODOS ESTADISTICOS (Mucho más rápidos al ser punteros directos)
 
-static double get_table_number(lua_State *L, int idx, size_t i) {
-	lua_rawgeti(L, idx, (lua_Integer)i);
-	double v = lua_tonumber(L, -1);
-	lua_pop(L, 1);
-	return v;
-}
-
-static size_t get_length(lua_State *L, int idx, int len_arg_pos) {
-	if (lua_isuserdata(L, idx)) {
-		size_t n = (size_t)luaL_checkinteger(L, len_arg_pos);
-		if (n == 0) luaL_error(L, "invalid length");
-		return n;
-	}
-
-	if (lua_istable(L, idx)) {
-		return get_table_len(L, idx);
-	}
-
-	luaL_error(L, "expected userdata or table");
-	return 0;
-}
-
-static double get_value(lua_State *L, int idx, size_t i) {
-	if (is_array_userdata(L, idx)) {
-		double *ptr = (double*)lua_touserdata(L, idx);
-		if (!ptr) return NAN;
-		return ptr[i - 1];
-	}
-
-	return get_table_number(L, idx, i);
-}
-
-// MEAN
 static int l_mean(lua_State *L) {
-	size_t n = get_length(L, 1, 2);
+    Array *arr = check_array(L, 1);
+    if (arr->n == 0) { lua_pushnumber(L, 0); return 1; }
 
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
+    double sum = 0.0;
+    for (size_t i = 0; i < arr->n; i++) sum += arr->data[i];
+    
+    lua_pushnumber(L, sum / (double)arr->n);
+    return 1;
+}
 
-	double sum = 0.0;
+static int l_mse(lua_State *L) {
+    Array *a = check_array(L, 1);
+    Array *b = check_array(L, 2);
+    
+    size_t n = (a->n < b->n) ? a->n : b->n;
+    if (n == 0) { lua_pushnumber(L, 0); return 1; }
 
-	for (size_t i = 1; i <= n; i++) {
-		sum += get_value(L, 1, i);
-	}
+    double sum = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        double d = a->data[i] - b->data[i];
+        sum += d * d;
+    }
+    lua_pushnumber(L, sum / (double)n);
+    return 1;
+}
 
-	lua_pushnumber(L, sum / (double)n);
-	return 1;
+static int l_r2(lua_State *L) {
+    Array *y_true = check_array(L, 1);
+    Array *y_pred = check_array(L, 2);
+    size_t n = (y_true->n < y_pred->n) ? y_true->n : y_pred->n;
+    if (n == 0) { lua_pushnumber(L, 0); return 1; }
+
+    double sum_y = 0.0;
+    for (size_t i = 0; i < n; i++) sum_y += y_true->data[i];
+    double mean_y = sum_y / (double)n;
+
+    double ss_res = 0.0, ss_tot = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        double res = y_true->data[i] - y_pred->data[i];
+        double tot = y_true->data[i] - mean_y;
+        ss_res += res * res;
+        ss_tot += tot * tot;
+    }
+
+    if (ss_tot < 1e-12) lua_pushnumber(L, 0.0);
+    else lua_pushnumber(L, 1.0 - (ss_res / ss_tot));
+    return 1;
 }
 
 // VARIANCE
 static int l_var(lua_State *L) {
-	size_t n = get_length(L, 1, 2);
+    Array *arr = check_array(L, 1);
+    size_t n = arr->n;
+    if (n == 0) { lua_pushnumber(L, 0); return 1; }
 
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
-
-	double mean = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		mean += get_value(L, 1, i);
-	}
-
-	mean /= (double)n;
-
-	double var = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		double d = get_value(L, 1, i) - mean;
-		var += d * d;
-	}
-
-	lua_pushnumber(L, var / (double)n);
-	return 1;
+    double sum = 0.0, sq_sum = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        sum += arr->data[i];
+        sq_sum += arr->data[i] * arr->data[i];
+    }
+    
+    double mean = sum / (double)n;
+    // Formula eficiente: E[X^2] - (E[X])^2
+    double variance = (sq_sum / (double)n) - (mean * mean);
+    
+    lua_pushnumber(L, variance);
+    return 1;
 }
 
 // STD
 static int l_std(lua_State *L) {
-	lua_pushcfunction(L, l_var);
-	lua_pushvalue(L, 1);
-
-	if (lua_isuserdata(L, 1))
-		lua_pushvalue(L, 2);
-
-	int argc = lua_isuserdata(L, 1) ? 2 : 1;
-
-	lua_call(L, argc, 1);
-
-	double var = lua_tonumber(L, -1);
-	lua_pop(L, 1);
-
-	lua_pushnumber(L, sqrt(var));
-	return 1;
+    // Reutilizamos l_var para evitar duplicar lógica
+    l_var(L); 
+    double var = lua_tonumber(L, -1);
+    lua_pushnumber(L, sqrt(var));
+    return 1;
 }
 
-// MSE
-static int l_mse(lua_State *L) {
-	size_t n;
+// MAE
+static int l_mae(lua_State *L) {
+    Array *a = check_array(L, 1);
+    Array *b = check_array(L, 2);
+    size_t n = (a->n < b->n) ? a->n : b->n;
+    if (n == 0) { lua_pushnumber(L, 0); return 1; }
 
-	if (lua_isuserdata(L, 1) && lua_isuserdata(L, 2)) {
-		n = (size_t)luaL_checkinteger(L, 3);
-	} else {
-		size_t n1 = get_length(L, 1, 3);
-		size_t n2 = get_length(L, 2, 3);
-		n = (n1 < n2) ? n1 : n2;
-	}
+    double sum_abs_diff = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        sum_abs_diff += fabs(a->data[i] - b->data[i]);
+    }
 
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
-
-	double sum = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		double d = get_value(L, 1, i) - get_value(L, 2, i);
-		sum += d * d;
-	}
-
-	lua_pushnumber(L, sum / (double)n);
-	return 1;
+    lua_pushnumber(L, sum_abs_diff / (double)n);
+    return 1;
 }
 
-// R2 SCORE
-static int l_r2(lua_State *L) {
-	size_t n;
-
-	if (lua_isuserdata(L, 1) && lua_isuserdata(L, 2)) {
-		n = (size_t)luaL_checkinteger(L, 3);
-	} else {
-		size_t n1 = get_length(L, 1, 3);
-		size_t n2 = get_length(L, 2, 3);
-		n = (n1 < n2) ? n1 : n2;
-	}
-
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
-
-	double mean = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		mean += get_value(L, 1, i);
-	}
-
-	mean /= (double)n;
-
-	double ss_res = 0.0;
-	double ss_tot = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		double y = get_value(L, 1, i);
-		double p = get_value(L, 2, i);
-
-		double r = y - p;
-		ss_res += r * r;
-
-		double t = y - mean;
-		ss_tot += t * t;
-	}
-
-	if (ss_tot < 1e-12) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
-
-	lua_pushnumber(L, 1.0 - (ss_res / ss_tot));
-	return 1;
-}
-
-// CORRELATION
+// CORR
 static int l_corr(lua_State *L) {
-	size_t n;
+    Array *x = check_array(L, 1);
+    Array *y = check_array(L, 2);
+    size_t n = (x->n < y->n) ? x->n : y->n;
+    if (n == 0) { lua_pushnumber(L, 0); return 1; }
 
-	if (lua_isuserdata(L, 1) && lua_isuserdata(L, 2)) {
-		n = (size_t)luaL_checkinteger(L, 3);
-	} else {
-		size_t n1 = get_length(L, 1, 3);
-		size_t n2 = get_length(L, 2, 3);
-		n = (n1 < n2) ? n1 : n2;
-	}
+    double sum_x = 0.0, sum_y = 0.0;
+    double sum_xy = 0.0;
+    double sum_x2 = 0.0, sum_y2 = 0.0;
 
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
+    for (size_t i = 0; i < n; i++) {
+        double xi = x->data[i];
+        double yi = y->data[i];
+        sum_x += xi;
+        sum_y += yi;
+        sum_xy += xi * yi;
+        sum_x2 += xi * xi;
+        sum_y2 += yi * yi;
+    }
 
-	double mx = 0.0, my = 0.0;
+    double num = ((double)n * sum_xy) - (sum_x * sum_y);
+    double den = sqrt(((double)n * sum_x2 - (sum_x * sum_x)) * ((double)n * sum_y2 - (sum_y * sum_y)));
 
-	for (size_t i = 1; i <= n; i++) {
-		mx += get_value(L, 1, i);
-		my += get_value(L, 2, i);
-	}
+    if (fabs(den) < 1e-12) lua_pushnumber(L, 0);
+    else lua_pushnumber(L, num / den);
 
-	mx /= (double)n;
-	my /= (double)n;
-
-	double num = 0.0;
-	double dx = 0.0;
-	double dy = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		double vx = get_value(L, 1, i) - mx;
-		double vy = get_value(L, 2, i) - my;
-
-		num += vx * vy;
-		dx += vx * vx;
-		dy += vy * vy;
-	}
-
-	if (dx < 1e-12 || dy < 1e-12) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
-
-	lua_pushnumber(L, num / sqrt(dx * dy));
-	return 1;
+    return 1;
 }
 
-// MAE (Mean Absolute Error)
-static int l_mae(lua_State* L) {
-	size_t n;
+static int l_array_append(lua_State *L) {
+    Array *arr = check_array(L, 1);
+    double val = luaL_checknumber(L, 2);
+    size_t new_n = arr->n + 1;
 
-	if (lua_isuserdata(L, 1) && lua_isuserdata(L, 2)) {
-		n = (size_t)luaL_checkinteger(L, 3);
-	} else {
-		size_t n1 = get_length(L, 1, 3);
-		size_t n2 = get_length(L, 2, 3);
-		n = (n1 < n2) ? n1 : n2;
-	}
+    // Creamos un nuevo objeto con espacio para n + 1
+    Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (new_n * sizeof(double)));
+    new_arr->n = new_n;
 
-	if (n == 0) {
-		lua_pushnumber(L, 0);
-		return 1;
-	}
+    // Copiamos datos antiguos y añadimos el nuevo
+    memcpy(new_arr->data, arr->data, arr->n * sizeof(double));
+    new_arr->data[arr->n] = val;
 
-	double sum = 0.0;
-
-	for (size_t i = 1; i <= n; i++) {
-		double a = get_value(L, 1, i);
-		double b = get_value(L, 2, i);
-
-		sum += fabs(a - b);
-	}
-
-	lua_pushnumber(L, sum / (double)n);
-	return 1;
+    luaL_getmetatable(L, "ArrayMT");
+    lua_setmetatable(L, -2);
+    return 1;
 }
 
-// REGISTRO
-static const luaL_Reg stats_lib[] = {
-	{"corr", l_corr},
-	{"mae",  l_mae},
-	{"mean", l_mean},
-	{"mse",  l_mse},
-	{"r2",   l_r2},
-	{"std",  l_std},
-	{"var",  l_var},
+static int l_array_slice(lua_State *L) {
+    Array *arr = check_array(L, 1);
+    lua_Integer start = luaL_checkinteger(L, 2);
+    lua_Integer end = luaL_optinteger(L, 3, (lua_Integer)arr->n);
+
+    // Ajuste de índices (Lua style: 1-based)
+    if (start < 1) start = 1;
+    if (end > (lua_Integer)arr->n) end = (lua_Integer)arr->n;
+    if (start > end) {
+        // Devolver array vacío si el rango es inválido
+        Array *empty = (Array*)lua_newuserdata(L, sizeof(Array));
+        empty->n = 0;
+        luaL_getmetatable(L, "ArrayMT");
+        lua_setmetatable(L, -2);
+        return 1;
+    }
+
+    size_t slice_n = (size_t)(end - start + 1);
+    Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (slice_n * sizeof(double)));
+    new_arr->n = slice_n;
+
+    // Copiar la sección específica
+    memcpy(new_arr->data, &arr->data[start - 1], slice_n * sizeof(double));
+
+    luaL_getmetatable(L, "ArrayMT");
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+// Soporta: print(#arr)
+static int l_array_len(lua_State *L) {
+    Array *arr = check_array(L, 1);
+    lua_pushinteger(L, (lua_Integer)arr->n);
+    return 1;
+}
+
+// Soporta: print(arr[1]) y arr:mean()
+static int l_array_index(lua_State *L) {
+    Array *arr = check_array(L, 1);
+
+    if (lua_isnumber(L, 2)) {
+        lua_Integer idx = lua_tointeger(L, 2);
+        if (idx < 1 || idx > (lua_Integer)arr->n) {
+            lua_pushnil(L); // Fuera de rango
+        } else {
+            lua_pushnumber(L, arr->data[idx - 1]);
+        }
+        return 1;
+    }
+
+    // Si no es un número, buscamos el método en la metatabla
+    lua_getmetatable(L, 1);
+    lua_getfield(L, -1, "__methods"); // Tabla donde moveremos los métodos
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
+    return 1;
+}
+
+static int l_array_tostring(lua_State *L) {
+    // Usamos luaL_checkudata para asegurarnos de que es un Array
+    Array *arr = (Array*)luaL_checkudata(L, 1, "ArrayMT");
+    
+    // lua_touserdata devuelve el puntero genérico (la dirección de memoria)
+    // El especificador %p en lua_pushfstring formatea automáticamente el puntero a hexadecimal
+    lua_pushfstring(L, "cstats.array: %p (%I elements)", lua_touserdata(L, 1), (lua_Integer)arr->n);
+    
+    return 1;
+}
+
+// REGISTRO Y METATABLA
+static const struct luaL_Reg array_methods[] = {
+    {"corr",   l_corr},
+    {"mae",    l_mae},
+    {"mean",   l_mean},
+    {"mse",    l_mse},
+    {"r2",     l_r2},
+    {"std",    l_std},
+    {"var",    l_var},
+	{"append", l_array_append},
+	{"slice",  l_array_slice},
 	{NULL, NULL}
 };
 
 int luaopen_cstats(lua_State *L) {
-	luaL_newlib(L, stats_lib);
-	return 1;
+    luaL_newmetatable(L, "ArrayMT");
+
+    // 1. Tabla de metodos para :mean(), :var(), etc.
+    lua_newtable(L);
+    luaL_setfuncs(L, array_methods, 0);
+    lua_setfield(L, -2, "__methods");
+
+    // 2. Metametodos principales
+    lua_pushcfunction(L, l_array_index);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_array_len);
+    lua_setfield(L, -2, "__len");
+
+    lua_pushcfunction(L, l_array_tostring);
+    lua_setfield(L, -2, "__tostring");
+
+    // 3. Libreria principal
+    luaL_Reg funcs[] = {
+        {"array", l_array},
+        {NULL, NULL}
+    };
+    luaL_newlib(L, funcs);
+    return 1;
 }
