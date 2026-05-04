@@ -187,7 +187,7 @@ static int l_array_append(lua_State *L) {
     new_arr->data = (double*)malloc(new_n * sizeof(double));
     if (!new_arr->data) return luaL_error(L, "Out of memory");
 
-    // 3. Copiar y añadir
+    // 3. Copiar y agregar
     memcpy(new_arr->data, arr->data, arr->n * sizeof(double));
     new_arr->data[arr->n] = val;
 
@@ -205,7 +205,7 @@ static int l_array_slice(lua_State *L) {
     if (start < 1) start = 1;
     if (end > (lua_Integer)arr->n) end = (lua_Integer)arr->n;
     if (start > end) {
-        // Devolver array vacío si el rango es invalido
+        // Devolver array vacio si el rango es invalido
         Array *empty = (Array*)lua_newuserdata(L, sizeof(Array));
         empty->n = 0;
         luaL_getmetatable(L, "ArrayMT");
@@ -217,7 +217,7 @@ static int l_array_slice(lua_State *L) {
     Array *new_arr = (Array*)lua_newuserdata(L, sizeof(Array) + (slice_n * sizeof(double)));
     new_arr->n = slice_n;
 
-    // Copiar la seccion específica
+    // Copiar la seccion especifica
     memcpy(new_arr->data, &arr->data[start - 1], slice_n * sizeof(double));
 
     luaL_getmetatable(L, "ArrayMT");
@@ -261,9 +261,9 @@ static int l_array_index(lua_State *L) {    Array *arr = check_array(L, 1);
         return 1;
     }
 
-    // Si no es un número, buscamos el metodo en la metatabla
+    // Si no es un numero, buscamos el metodo en la metatabla
     lua_getmetatable(L, 1);
-    lua_getfield(L, -1, "__methods"); // Tabla donde moveremos los métodos
+    lua_getfield(L, -1, "__methods"); // Tabla donde moveremos los metodos
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
     return 1;
@@ -273,7 +273,7 @@ static int l_array_tostring(lua_State *L) {
     // Usamos luaL_checkudata para asegurarnos de que es un Array
     Array *arr = (Array*)luaL_checkudata(L, 1, "ArrayMT");
     
-    // lua_touserdata devuelve el puntero genérico (la dirección de memoria)
+    // lua_touserdata devuelve el puntero genérico (la direccion de memoria)
     // El especificador %p en lua_pushfstring formatea automaticamente el puntero a hexadecimal
     lua_pushfstring(L, "cstats.array: %p (%d elements)", lua_touserdata(L, 1), (int)arr->n);
     return 1;
