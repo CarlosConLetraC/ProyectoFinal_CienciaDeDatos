@@ -113,9 +113,9 @@ struct LinearRegression {
 			// El bias (weights[0]) usualmente no se regulariza
 			weights[0] -= lr * grad[0] / n;
 
-			// Actualización de pesos con regularización L2
+			// Actualizacion de pesos con regularizacion L2
 			for (size_t j = 0; j < k; j++) {
-				// Se añade (lambda * weights[j+1]) al gradiente
+				// Se agrega (lambda * weights[j+1]) al gradiente
 				double reg_term = lambda * weights[j + 1];
 				weights[j + 1] -= lr * (grad[j + 1] / n + reg_term);
 			}
@@ -221,7 +221,7 @@ static int lr_mse(lua_State* L) {
         lua_pop(L, 1); // Sacamos el valor real del stack, queda la fila en [1]
 
         if (std::isfinite(real)) {
-            lua_pushcfunction(L, lr_predict); // [2] Función
+            lua_pushcfunction(L, lr_predict); // [2] Funcion
             lua_pushvalue(L, 1);              // [3] Self (modelo)
             lua_pushvalue(L, -3);             // [4] Fila (estaba en el índice -3 ahora)
             
@@ -318,7 +318,7 @@ static int lr_fit(lua_State* L) {
     double lr     = luaL_optnumber(L, 3, 0.01);
     int epochs    = (int)luaL_optinteger(L, 4, 1000);
     double ratio  = luaL_optnumber(L, 5, 0.8);
-    double lambda = luaL_optnumber(L, 6, 0.01); // <--- Nuevo parámetro (índice 6)
+    double lambda = luaL_optnumber(L, 6, 0.01); // <--- Nuevo parametro (índice 6)
 
     m->build_matrix(L, 2);
     if (m->X.size() < 2) return luaL_error(L, "not enough data");
@@ -333,7 +333,7 @@ static int lr_fit(lua_State* L) {
         y_tr[i] = (y_tr[i] - m->mean_y) / (m->std_y + 1e-12);
     }
 
-    // Pasar lambda al método fit
+    // Pasar lambda al metodo fit
     m->fit(lr, epochs, lambda, X_tr, y_tr);
     
     lua_pushboolean(L, true);
@@ -490,14 +490,14 @@ static int logr_new(lua_State* L) {
 // --- REGISTRO ---
 
 static const luaL_Reg logistic_methods[] = {
-    {"load", logr_load},
-	{"normalize", logr_normalize},
-	{"fit", logr_fit},
-	{"predict", logr_predict},
+    {"load",        logr_load},
+	{"normalize",   logr_normalize},
+	{"fit",         logr_fit},
+	{"predict",     logr_predict},
     {"probability", logr_probability},
-	{"accuracy", logr_accuracy},
+	{"accuracy",    logr_accuracy},
     {"get_weights", logr_get_weights},
-	{"export", logr_export},
+	{"export",      logr_export},
 	{NULL, NULL}
 };
 
@@ -531,7 +531,7 @@ extern "C" int luaopen_cml(lua_State* L) {
     lua_setfield(L, -2, "__gc");
     lua_pop(L, 1);
 
-    // --- Tabla del Módulo ---
+    // --- Tabla del Modulo ---
     lua_newtable(L);
     lua_pushcfunction(L, lr_new); lua_setfield(L, -2, "LinearRegression");
     lua_pushcfunction(L, logr_new); lua_setfield(L, -2, "LogisticRegression");
